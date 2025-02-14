@@ -1,4 +1,4 @@
-import gym
+import gymnasium as gym
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -10,10 +10,14 @@ from replay_buffer import *
 from utils import *
 from IPython.display import clear_output
 from torch.nn.utils import clip_grad_norm_
+from torch.utils.tensorboard import SummaryWriter
+import logging
 from preprocess_frame import *
 import copy
 from frame_stack import *
 import os
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 
 class DQNAgent:
@@ -245,7 +249,8 @@ class DQNAgent:
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, np.float64, bool]:
         """Take an action and return the response of the env (next state, rewards, done)."""
-        next_state, reward, done, _ = self.env.step(action)
+        next_state, reward, terminated, truncated, _ = self.env.step(action)
+        done = terminated or truncated
         if self.frame_preprocess is not None:
             next_state = self.frame_preprocess(next_state)
         if self.n_frames_stack > 1:
@@ -300,8 +305,9 @@ class DQNAgent:
     def train(self, num_frames: int) -> (List[int], List[int]):
         """Train the agent."""
         self.is_test = False
+        writer = SummaryWriter(log_dir="logs/rdqn_training")
 
-        state = self.env.reset()
+        state, _= self.env.reset()
         # get the first state
         state = self.init_first_frame(state)
 
@@ -323,10 +329,17 @@ class DQNAgent:
 
             self.update_beta()
 
+
+            if frame_idx % 100 == 0:
+                logging.info(f"Frames Processed: {frame_idx}, Current Score: {score}")
+                writer.add_scalar("Training/Frames Processed", frame_idx, frame_idx)
+
             # if episode ends
             if done:
                 scores.append(score)
-                state = self.env.reset()
+                logging.info(f"Episode finished with score: {score}")
+                writer.add_scalar("Training/Episode Reward", score, frame_idx)
+                state, _ = self.env.reset()
                 state = self.init_first_frame(state)
                 score = 0
 
@@ -339,9 +352,13 @@ class DQNAgent:
                 loss = self.update_model()
                 losses.append(loss)
                 update_cnt += 1
+                logging.info(f"Update Count: {update_cnt}, Loss: {loss:.4f}")
+                writer.add_scalar("Training/Loss", loss, frame_idx)
+
                 # if hard update is needed
                 if update_cnt % self.target_update == 0 and not self.no_double:
                     self._target_hard_update()
+                    logging.info(f"Target network updated at frame {frame_idx}")
 
             if frame_idx % self.frame_interval == 0:
                 if len(scores) == 0:
@@ -349,6 +366,8 @@ class DQNAgent:
                         # if no episodes have been completed in the current interval
                         # then take the last score
                         frame_scores.append(float(frame_scores[-1]))
+                        logging.info(f"Frame {frame_idx}: Avg Reward = {avg_reward:.2f}")
+                        writer.add_scalar("Training/Average Reward", avg_reward, frame_idx)
                     else:
                         # if no episodes have been completed since the beginning of the game
                         frame_scores.append(0.)
@@ -361,6 +380,8 @@ class DQNAgent:
                 if self.early_stopping and frame_scores[-1] > best_average_score:
                     best_average_score = frame_scores[-1]
                     best_model = copy.deepcopy(self.dqn.state_dict())
+                    logging.info(f"New best average score: {best_average_score:.2f}, model saved.")
+
                 # save temporary model
                 self.save()
 
@@ -370,6 +391,8 @@ class DQNAgent:
         if self.early_stopping:
             self.dqn.load_state_dict(best_model)
         self.env.close()
+        writer.close()  # Close TensorBoard writer
+        logging.info("Training completed.")
 
         return frame_scores, losses
 

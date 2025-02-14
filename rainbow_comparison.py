@@ -1,5 +1,5 @@
 from rainbow import *
-import gym
+import gymnasium as gym
 import torch
 import matplotlib.pyplot as plt
 import argparse

@@ -9,10 +9,10 @@ IF RUNNING ON NOTEBOOK
 !pip install gym[atari] > /dev/null 2>&1
 """
 from rainbow import *
-import gym
-from gym.wrappers import Monitor
-from gym import logger as gymlogger
-gymlogger.set_level(40)  # error only
+import gymnasium as gym
+#from gymnasium.wrappers import Monitor
+from gymnasium import logger as gymlogger
+#gymlogger.set_level(40)  # error only
 import math
 import glob
 import io
@@ -21,12 +21,11 @@ from IPython.display import HTML
 from IPython import display as ipythondisplay
 from pyvirtualdisplay import Display
 import cv2
-display = Display(visible=0, size=(1400, 900))
-display.start()
+import ale_py
 
 
 def wrap_env(env):
-    env = Monitor(env, './video', force=True)
+    #env = Monitor(env, './video', force=True)
     return env
 
 
@@ -43,8 +42,8 @@ env_name = ["CartPole-v0", "MsPacman-v0"]
 
 # PARAMETERS----------------------------------------------------
 env_idx = 1  # environment id
-num_frames = 300000  # number of training frames
-memory_size = 30000  # replay memory size
+num_frames = 1000000  # number of training frames
+memory_size = 50000  # replay memory size
 batch_size = 32  # batch size
 target_update = 1000  # update target network frequency
 frame_interval = 1000  # refresh plot frequency
@@ -52,17 +51,24 @@ plot = True  # plot score and loss during training
 model_name = env_name[env_idx] + "_" + str(num_frames)  # model name, don't need to change it
 training_delay = num_frames // 50  # number of frames before start training
 trials = 100  # number of evaluation episodes
-frames_stack = 1  # number of consecutive frames to take as input
+frames_stack = 4  # number of consecutive frames to take as input
 train = True  # train a new model
 test = True  # evaluate the new model if train==True,
              # otherwise try to load an old model that has been trained for num_frames frames
              # and if present use it to perform evaluation
 # ---------------------------------------------------------------
 
+print("opening environment")
+
+
+# TODO: add preprocessing function
 preprocess_function = None
+
+
 if env_idx == 1:
     preprocess_function = preprocess_obs_pacman
 
+gym.register_envs(ale_py)
 env = wrap_env(gym.make(env_name[env_idx]))
 
 agent = DQNAgent(env, memory_size, batch_size, target_update,
@@ -79,6 +85,7 @@ agent = DQNAgent(env, memory_size, batch_size, target_update,
                          no_n_step=True, no_noise=True, no_priority=True,
                          plot=plot, frame_interval=frame_interval)"""
 if train:
+    print("training")
     score, loss = agent.train(num_frames)
     agent.save()
 
